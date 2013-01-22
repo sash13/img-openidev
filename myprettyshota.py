@@ -14,19 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-import base64
+
 import cgi
-import datetime
 import time
 import urllib
-import logging
 import webapp2
 import hashlib
 
 from google.appengine.ext import db
 from google.appengine.api import images
 from google.appengine.api import users
-from google.appengine.api.logservice import logservice
+
 
 
 #from http://webapp-improved.appspot.com/api/webapp2_extras/appengine/users.html
@@ -76,65 +74,6 @@ class MainPage(webapp2.RequestHandler):
   def get(self):
     self.redirect("http://blog.openidev.ru")
 
-class LogPageAlternative(webapp2.RequestHandler):
-    @admin_required
-    def get(self):
-        #logging.info('Starting Main handler')
-        # Get the incoming offset param from the Next link to advance through
-        # the logs. (The first time the page is loaded, there won't be any offset.)
-        try:
-            offset = self.request.get('offset') or None
-            if offset:
-                offset = base64.urlsafe_b64decode(str(offset))
-        except TypeError:
-            offset = None
-
-        # Set up end time for our query.
-        end_time = time.time()
-
-        # Count specifies the max number of RequestLogs shown at one time.
-        # Use a boolean to initially turn off visiblity of the "Next" link.
-        count = 5
-        show_next = False
-        last_offset = None
-
-        # Iterate through all the RequestLog objects, displaying some fields and
-        # iterate through all AppLogs beloging to each RequestLog count times.
-        # In each iteration, save the offset to last_offset; the last one when
-        # count is reached will be used for the link.
-        i = 0
-        for req_log in logservice.fetch(end_time=end_time, offset=offset,
-                                        minimum_log_level=logservice.LOG_LEVEL_INFO,
-                                        include_app_logs=True):
-            #self.response.out.write('<br /> REQUEST LOG <br />')
-            self.response.out.write(
-                'IP: %s  Nickname: %s  Resource: %s  Referrer: %s ' %
-                (req_log.ip, req_log.nickname, req_log.resource, req_log.referrer))
-            self.response.out.write(
-                'Date: %s<br />' %
-                datetime.datetime.fromtimestamp(req_log.end_time).strftime('%D %T UTC'))
-
-            last_offset= req_log.offset
-            i += 1
-
-            '''for app_log in req_log.app_logs:
-                self.response.out.write('<br />APP LOG<br />')
-                self.response.out.write(
-                    'Date: %s<br />' %
-                    datetime.datetime.fromtimestamp(app_log.time).strftime('%D %T UTC'))
-                self.response.out.write('<br />Message: %s<br />' % app_log.message)'''
-
-            if i >= count:
-                show_next = True
-                break
-
-        # Prepare the offset URL parameters, if any.
-        if show_next:
-            query = self.request.GET
-            query['offset'] = base64.urlsafe_b64encode(last_offset)
-            next_link = urllib.urlencode(query)
-            self.response.out.write('<a href="/logs2?%s">Next</a>' % next_link)
-
 
 class LogPage(webapp2.RequestHandler):
   @admin_required
@@ -178,6 +117,11 @@ class uploadPage(webapp2.RequestHandler):
 
 class ImageHandler(webapp2.RequestHandler):
   def get(self, image_url):
+    user_agent = self.request.headers.get('User-Agent')
+    if 'Feedfetcher' in user_agent:
+      self.redirect("http://www.google.com/feedfetcher.html")
+      return
+
     image = None
 
     try:
@@ -185,12 +129,12 @@ class ImageHandler(webapp2.RequestHandler):
       if not image: raise "Not found"
     except:
       self.error(404)
-      with open("default.jpg", 'r') as f:
+      '''with open("default.jpg", 'r') as f:
         default_img = f.read()
       self.response.headers['Content-Type'] = 'image/jpeg'
-      '''self.response.out.write( "Could not find image: '%s'" % id )'''
-      self.response.out.write(default_img)
+      self.response.out.write(default_img)'''
       loggin(self, '404')
+      self.redirect('http://%s/404.jpg' % self.request.headers.get('host', 'no host'))
       return
 
     loggin(self, image_url)
@@ -218,7 +162,6 @@ def getContentType( filename ): # lists and converts supported file extensions t
 app = webapp2.WSGIApplication([
   ('/', MainPage),
   ('/logs', LogPage),
-  ('/logs2', LogPageAlternative),
   ('/upload', uploadPage),
   (r'/load/(.*)', ImageHandler)
 ], debug=True)
